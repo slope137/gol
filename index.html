@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>Game of Life — Aging Edition</title>
+  <meta name="theme-color" content="#0b0d12" />
+  <!-- iOS "Add to Home Screen" support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Life" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- Inline SVG icon keeps the project single-file; iOS 15+ accepts it for Add to Home Screen. -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='36' fill='%230b0d12'/><rect x='66' y='30' width='30' height='30' fill='%23c4b3ff'/><rect x='96' y='60' width='30' height='30' fill='%239a82ff'/><rect x='36' y='90' width='30' height='30' fill='%237c5cff'/><rect x='66' y='90' width='30' height='30' fill='%237c5cff'/><rect x='96' y='90' width='30' height='30' fill='%237c5cff'/></svg>" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='36' fill='%230b0d12'/><rect x='66' y='30' width='30' height='30' fill='%23c4b3ff'/><rect x='96' y='60' width='30' height='30' fill='%239a82ff'/><rect x='36' y='90' width='30' height='30' fill='%237c5cff'/><rect x='66' y='90' width='30' height='30' fill='%237c5cff'/><rect x='96' y='90' width='30' height='30' fill='%237c5cff'/></svg>" />
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #141821;
+      --panel-2: #1b2030;
+      --border: #262c3d;
+      --text: #e6e9f2;
+      --muted: #8b93a7;
+      --accent: #7c5cff;
+      --accent-2: #5aa9ff;
+      --danger: #ff5a7a;
+      --ok: #43d39e;
+      --grid-line: #1f2535;
+      --dead: #0f131c;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      /* iOS: no text auto-scale, no grey tap flash, no rubber-band while painting */
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+      /* Dynamic viewport avoids iOS URL-bar content cutoff; vh stays as fallback */
+      height: 100dvh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    header .mode-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+    }
+
+    header .mode-tabs button {
+      background: transparent;
+      color: var(--muted);
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    header .mode-tabs button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    header .gen-info {
+      display: flex;
+      gap: 16px;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    header .gen-info strong {
+      color: var(--text);
+      font-weight: 600;
+      margin-left: 4px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      min-height: 0;
+    }
+
+    .canvas-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: var(--bg);
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    canvas {
+      background: var(--dead);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: block;
+      image-rendering: pixelated;
+      cursor: crosshair;
+      /* Critical on iOS: let us handle drag-to-paint instead of panning the page */
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    canvas.sim-mode { cursor: default; }
+
+    .sidebar {
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section h2 {
+      margin: 0;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button, select, input[type="text"], input[type="number"] {
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    button {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      flex: 1;
+    }
+    button:hover { background: #222940; border-color: #343c57; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: #8a6dff; }
+    button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+    button.danger:hover { background: rgba(255, 90, 122, 0.1); }
+
+    select, input[type="text"], input[type="number"] {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 7px 10px;
+      border-radius: 6px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .slider-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .template-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .template-grid button {
+      padding: 6px 8px;
+      font-size: 12px;
+      text-align: left;
+    }
+
+    .template-grid button.custom {
+      border-color: var(--accent-2);
+      color: var(--accent-2);
+    }
+
+    .legend {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .legend-bar {
+      display: flex;
+      height: 14px;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .legend-bar .swatch { flex: 1; }
+
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .help {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .hidden { display: none !important; }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      z-index: 10;
+    }
+    .toast.show { opacity: 1; }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .sidebar { border-left: none; border-top: 1px solid var(--border); max-height: 45vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Game of Life — Aging Edition</h1>
+      <div class="mode-tabs">
+        <button id="btn-mode-config" class="active">Configure</button>
+        <button id="btn-mode-sim">Simulate</button>
+      </div>
+      <div class="gen-info">
+        <div>Gen<strong id="gen-count">0</strong></div>
+        <div>Alive<strong id="alive-count">0</strong></div>
+      </div>
+    </header>
+
+    <main>
+      <div class="canvas-wrap">
+        <canvas id="grid" width="800" height="600"></canvas>
+      </div>
+
+      <aside class="sidebar">
+        <!-- CONFIG MODE -->
+        <div id="config-panel">
+          <div class="section">
+            <h2>Templates</h2>
+            <div class="template-grid" id="template-list"></div>
+            <div class="row">
+              <button id="btn-prev-template">◀ Prev</button>
+              <button id="btn-next-template">Next ▶</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Save Current Pattern</h2>
+            <div class="row">
+              <input type="text" id="template-name" placeholder="my-pattern" maxlength="30" />
+              <button id="btn-save-template" style="flex: 0 0 auto;">Save</button>
+            </div>
+            <div class="row">
+              <button id="btn-delete-template" class="danger">Delete custom template</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Grid</h2>
+            <label>
+              Columns
+              <input type="number" id="grid-cols" min="10" max="200" value="80" />
+            </label>
+            <label>
+              Rows
+              <input type="number" id="grid-rows" min="10" max="200" value="50" />
+            </label>
+            <div class="row">
+              <button id="btn-resize">Apply size</button>
+              <button id="btn-clear" class="danger">Clear</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Start</h2>
+            <button id="btn-start-sim" class="primary">▶ Start Simulation</button>
+          </div>
+
+          <div class="section">
+            <div class="help">
+              Click or drag on the grid to toggle cells.<br />
+              Pick a template or build your own, then press Start.
+            </div>
+          </div>
+        </div>
+
+        <!-- SIM MODE -->
+        <div id="sim-panel" class="hidden">
+          <div class="section">
+            <h2>Playback</h2>
+            <div class="row">
+              <button id="btn-play" class="primary">▶ Play</button>
+              <button id="btn-step">Step</button>
+            </div>
+            <div class="row">
+              <button id="btn-reset">Reset</button>
+              <button id="btn-back">◀ Back to Config</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Speed</h2>
+            <div class="slider-row">
+              <input type="range" id="speed" min="1" max="60" value="12" />
+              <span id="speed-label" style="font-variant-numeric: tabular-nums; min-width: 46px; text-align: right;">12 fps</span>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Rules</h2>
+            <label style="flex-direction: row; gap: 8px; align-items: center;">
+              <input type="checkbox" id="rule-age-cap" checked />
+              <span>Age cap (die + spread N/S/E/W after 10 gens)</span>
+            </label>
+            <label>
+              Max age
+              <input type="number" id="max-age" min="2" max="100" value="10" />
+            </label>
+          </div>
+
+          <div class="section">
+            <h2>Age → Color</h2>
+            <div class="legend">
+              <div class="legend-bar" id="legend-bar"></div>
+              <div class="legend-labels">
+                <span>age 1</span>
+                <span>age <span id="legend-max">10</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  (() => {
+    // ---------- State ----------
+    const state = {
+      cols: 80,
+      rows: 50,
+      cellSize: 10,
+      // 0 = dead, >0 = age (generations alive in this spot)
+      grid: null,
+      initialGrid: null,
+      generation: 0,
+      running: false,
+      mode: 'config', // 'config' | 'sim'
+      speed: 12,
+      maxAge: 10,
+      ruleAgeCap: true,
+      templates: [],
+      currentTemplateIndex: 0,
+      // interaction
+      painting: false,
+      paintValue: 0,
+      lastPaintCell: null,
+    };
+
+    // ---------- Built-in templates ----------
+    // Patterns are given as [row, col] offsets from top-left; we center them on the grid.
+    const BUILTIN_TEMPLATES = [
+      {
+        name: 'Blinker',
+        cells: [[0,0],[0,1],[0,2]],
+      },
+      {
+        name: 'Toad',
+        cells: [[0,1],[0,2],[0,3],[1,0],[1,1],[1,2]],
+      },
+      {
+        name: 'Beacon',
+        cells: [[0,0],[0,1],[1,0],[1,1],[2,2],[2,3],[3,2],[3,3]],
+      },
+      {
+        name: 'Glider',
+        cells: [[0,1],[1,2],[2,0],[2,1],[2,2]],
+      },
+      {
+        name: 'LWSS',
+        cells: [[0,1],[0,4],[1,0],[2,0],[2,4],[3,0],[3,1],[3,2],[3,3]],
+      },
+      {
+        name: 'Pulsar',
+        cells: [
+          [0,2],[0,3],[0,4],[0,8],[0,9],[0,10],
+          [2,0],[2,5],[2,7],[2,12],
+          [3,0],[3,5],[3,7],[3,12],
+          [4,0],[4,5],[4,7],[4,12],
+          [5,2],[5,3],[5,4],[5,8],[5,9],[5,10],
+          [7,2],[7,3],[7,4],[7,8],[7,9],[7,10],
+          [8,0],[8,5],[8,7],[8,12],
+          [9,0],[9,5],[9,7],[9,12],
+          [10,0],[10,5],[10,7],[10,12],
+          [12,2],[12,3],[12,4],[12,8],[12,9],[12,10],
+        ],
+      },
+      {
+        name: 'R-pentomino',
+        cells: [[0,1],[0,2],[1,0],[1,1],[2,1]],
+      },
+      {
+        name: 'Acorn',
+        cells: [[0,1],[1,3],[2,0],[2,1],[2,4],[2,5],[2,6]],
+      },
+      {
+        name: 'Diehard',
+        cells: [[0,6],[1,0],[1,1],[2,1],[2,5],[2,6],[2,7]],
+      },
+      {
+        name: 'Glider gun',
+        cells: [
+          [0,24],
+          [1,22],[1,24],
+          [2,12],[2,13],[2,20],[2,21],[2,34],[2,35],
+          [3,11],[3,15],[3,20],[3,21],[3,34],[3,35],
+          [4,0],[4,1],[4,10],[4,16],[4,20],[4,21],
+          [5,0],[5,1],[5,10],[5,14],[5,16],[5,17],[5,22],[5,24],
+          [6,10],[6,16],[6,24],
+          [7,11],[7,15],
+          [8,12],[8,13],
+        ],
+      },
+      {
+        name: 'Random 25%',
+        cells: null, // sentinel — generated at load time
+      },
+      {
+        name: 'Empty',
+        cells: [],
+      },
+    ];
+
+    // ---------- DOM ----------
+    const canvas = document.getElementById('grid');
+    const ctx = canvas.getContext('2d');
+    const genCountEl = document.getElementById('gen-count');
+    const aliveCountEl = document.getElementById('alive-count');
+    const configPanel = document.getElementById('config-panel');
+    const simPanel = document.getElementById('sim-panel');
+    const btnModeConfig = document.getElementById('btn-mode-config');
+    const btnModeSim = document.getElementById('btn-mode-sim');
+    const btnStartSim = document.getElementById('btn-start-sim');
+    const btnBack = document.getElementById('btn-back');
+    const btnPlay = document.getElementById('btn-play');
+    const btnStep = document.getElementById('btn-step');
+    const btnReset = document.getElementById('btn-reset');
+    const btnClear = document.getElementById('btn-clear');
+    const btnResize = document.getElementById('btn-resize');
+    const btnSaveTemplate = document.getElementById('btn-save-template');
+    const btnDeleteTemplate = document.getElementById('btn-delete-template');
+    const btnPrevTemplate = document.getElementById('btn-prev-template');
+    const btnNextTemplate = document.getElementById('btn-next-template');
+    const templateListEl = document.getElementById('template-list');
+    const templateNameEl = document.getElementById('template-name');
+    const gridColsEl = document.getElementById('grid-cols');
+    const gridRowsEl = document.getElementById('grid-rows');
+    const speedEl = document.getElementById('speed');
+    const speedLabelEl = document.getElementById('speed-label');
+    const ruleAgeCapEl = document.getElementById('rule-age-cap');
+    const maxAgeEl = document.getElementById('max-age');
+    const legendBarEl = document.getElementById('legend-bar');
+    const legendMaxEl = document.getElementById('legend-max');
+    const toastEl = document.getElementById('toast');
+
+    // ---------- Grid helpers ----------
+    function makeGrid(cols, rows) {
+      // Flat Uint8Array of ages (0 = dead, >0 = alive with that age)
+      return new Uint8Array(cols * rows);
+    }
+
+    function idx(x, y) {
+      return y * state.cols + x;
+    }
+
+    function cloneGrid(g) {
+      return new Uint8Array(g);
+    }
+
+    function clearGrid() {
+      state.grid.fill(0);
+      state.generation = 0;
+      draw();
+      updateStats();
+    }
+
+    function resizeGrid(cols, rows) {
+      cols = Math.max(10, Math.min(200, cols | 0));
+      rows = Math.max(10, Math.min(200, rows | 0));
+
+      const oldCols = state.cols;
+      const oldRows = state.rows;
+      const oldGrid = state.grid;
+
+      state.cols = cols;
+      state.rows = rows;
+      state.grid = makeGrid(cols, rows);
+
+      // Copy over as much of the old grid as fits, aligned to top-left.
+      if (oldGrid) {
+        const minC = Math.min(oldCols, cols);
+        const minR = Math.min(oldRows, rows);
+        for (let y = 0; y < minR; y++) {
+          for (let x = 0; x < minC; x++) {
+            state.grid[y * cols + x] = oldGrid[y * oldCols + x];
+          }
+        }
+      }
+
+      resizeCanvas();
+      state.generation = 0;
+      draw();
+      updateStats();
+    }
+
+    function resizeCanvas() {
+      // Fit the canvas inside the available space, keeping square cells.
+      const wrap = canvas.parentElement;
+      const padding = 32;
+      const maxW = wrap.clientWidth - padding;
+      const maxH = wrap.clientHeight - padding;
+      const sizeByW = Math.floor(maxW / state.cols);
+      const sizeByH = Math.floor(maxH / state.rows);
+      const cell = Math.max(4, Math.min(sizeByW, sizeByH));
+      state.cellSize = cell;
+      canvas.width = state.cols * cell;
+      canvas.height = state.rows * cell;
+    }
+
+    // ---------- Color (age → hue) ----------
+    // Hue 280 (purple) at age 1, down to 0 (red) at maxAge.
+    function colorForAge(age) {
+      const maxAge = state.maxAge;
+      const t = (Math.min(age, maxAge) - 1) / Math.max(1, maxAge - 1); // 0..1
+      const hue = 280 - 280 * t; // 280 -> 0
+      const sat = 85;
+      const light = 55;
+      return `hsl(${hue}, ${sat}%, ${light}%)`;
+    }
+
+    function renderLegend() {
+      legendMaxEl.textContent = state.maxAge;
+      const stops = [];
+      for (let a = 1; a <= state.maxAge; a++) {
+        stops.push(`<div class="swatch" style="background:${colorForAge(a)}"></div>`);
+      }
+      legendBarEl.innerHTML = stops.join('');
+    }
+
+    // ---------- Simulation step ----------
+    function step() {
+      const cols = state.cols;
+      const rows = state.rows;
+      const cur = state.grid;
+      const next = new Uint8Array(cur.length);
+
+      // Phase 1: apply standard Conway rules + age increment, and mark aged-out survivors.
+      // We also need to know which cells "die of age" so we can spawn around them.
+      const diedOfAge = [];
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const i = y * cols + x;
+          const alive = cur[i] > 0;
+
+          // Count live neighbors (with wrap-around / toroidal grid).
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = (x + dx + cols) % cols;
+              const ny = (y + dy + rows) % rows;
+              if (cur[ny * cols + nx] > 0) n++;
+            }
+          }
+
+          if (alive) {
+            if (n === 2 || n === 3) {
+              // Survives
+              const newAge = cur[i] + 1;
+              if (state.ruleAgeCap && newAge > state.maxAge) {
+                // Rule 5: die of old age, remember to spawn N/S/E/W.
+                next[i] = 0;
+                diedOfAge.push([x, y]);
+              } else {
+                next[i] = Math.min(newAge, 255);
+              }
+            } else {
+              next[i] = 0; // Under/overpopulation
+            }
+          } else {
+            if (n === 3) {
+              next[i] = 1; // Birth
+            } else {
+              next[i] = 0;
+            }
+          }
+        }
+      }
+
+      // Phase 2: spawn offspring from cells that died of old age.
+      // Target cells must be empty in `next` (i.e. not alive and not newly born).
+      // If two aged-out cells want the same target, first-come wins — fine either way.
+      for (const [x, y] of diedOfAge) {
+        const offsets = [
+          [0, -1], // N
+          [0, 1],  // S
+          [1, 0],  // E
+          [-1, 0], // W
+        ];
+        for (const [dx, dy] of offsets) {
+          const nx = (x + dx + state.cols) % state.cols;
+          const ny = (y + dy + state.rows) % state.rows;
+          const ni = ny * state.cols + nx;
+          if (next[ni] === 0) {
+            next[ni] = 1;
+          }
+        }
+      }
+
+      state.grid = next;
+      state.generation++;
+      updateStats();
+
+      // Auto-stop when the colony dies out.
+      let anyAlive = false;
+      for (let i = 0; i < next.length; i++) {
+        if (next[i] > 0) { anyAlive = true; break; }
+      }
+      if (!anyAlive && state.running) {
+        pause();
+        toast(`Extinction at generation ${state.generation}`);
+      }
+    }
+
+    // ---------- Rendering ----------
+    function draw() {
+      const cols = state.cols;
+      const rows = state.rows;
+      const cell = state.cellSize;
+      const grid = state.grid;
+
+      // Background
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--dead').trim() || '#0f131c';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Cells
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const age = grid[y * cols + x];
+          if (age > 0) {
+            ctx.fillStyle = colorForAge(age);
+            ctx.fillRect(x * cell, y * cell, cell, cell);
+          }
+        }
+      }
+
+      // Grid lines (only if cell size is large enough)
+      if (cell >= 6) {
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid-line').trim() || '#1f2535';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x <= cols; x++) {
+          ctx.moveTo(x * cell + 0.5, 0);
+          ctx.lineTo(x * cell + 0.5, rows * cell);
+        }
+        for (let y = 0; y <= rows; y++) {
+          ctx.moveTo(0, y * cell + 0.5);
+          ctx.lineTo(cols * cell, y * cell + 0.5);
+        }
+        ctx.stroke();
+      }
+    }
+
+    function updateStats() {
+      genCountEl.textContent = state.generation;
+      let alive = 0;
+      for (let i = 0; i < state.grid.length; i++) if (state.grid[i] > 0) alive++;
+      aliveCountEl.textContent = alive;
+    }
+
+    // ---------- Templates ----------
+    const CUSTOM_STORE_KEY = 'gol-aging-custom-templates';
+
+    function loadCustomTemplates() {
+      try {
+        const raw = localStorage.getItem(CUSTOM_STORE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(t => t && typeof t.name === 'string' && Array.isArray(t.cells))
+          .map(t => ({ ...t, custom: true }));
+      } catch { return []; }
+    }
+
+    function saveCustomTemplates(customs) {
+      localStorage.setItem(CUSTOM_STORE_KEY, JSON.stringify(customs.map(({name, cells}) => ({name, cells}))));
+    }
+
+    function refreshTemplates() {
+      const customs = loadCustomTemplates();
+      state.templates = [
+        ...BUILTIN_TEMPLATES.map(t => ({ ...t })),
+        ...customs,
+      ];
+      renderTemplateList();
+    }
+
+    function renderTemplateList() {
+      templateListEl.innerHTML = '';
+      state.templates.forEach((t, i) => {
+        const b = document.createElement('button');
+        b.textContent = t.name;
+        if (t.custom) b.classList.add('custom');
+        if (i === state.currentTemplateIndex) b.style.outline = '2px solid var(--accent)';
+        b.addEventListener('click', () => {
+          state.currentTemplateIndex = i;
+          loadTemplate(t);
+          renderTemplateList();
+        });
+        templateListEl.appendChild(b);
+      });
+    }
+
+    function materializeTemplateCells(t) {
+      if (t.cells === null && t.name === 'Random 25%') {
+        const out = [];
+        for (let y = 0; y < state.rows; y++) {
+          for (let x = 0; x < state.cols; x++) {
+            if (Math.random() < 0.25) out.push([y, x]);
+          }
+        }
+        return out;
+      }
+      return t.cells || [];
+    }
+
+    function loadTemplate(t) {
+      clearGrid();
+      const cells = materializeTemplateCells(t);
+      if (cells.length === 0) {
+        draw();
+        return;
+      }
+      // Centre on grid
+      let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+      for (const [r, c] of cells) {
+        if (r < minR) minR = r;
+        if (r > maxR) maxR = r;
+        if (c < minC) minC = c;
+        if (c > maxC) maxC = c;
+      }
+      const h = maxR - minR + 1;
+      const w = maxC - minC + 1;
+      const offR = Math.floor((state.rows - h) / 2) - minR;
+      const offC = Math.floor((state.cols - w) / 2) - minC;
+      for (const [r, c] of cells) {
+        const y = r + offR;
+        const x = c + offC;
+        if (x >= 0 && x < state.cols && y >= 0 && y < state.rows) {
+          state.grid[y * state.cols + x] = 1;
+        }
+      }
+      state.generation = 0;
+      draw();
+      updateStats();
+    }
+
+    function currentPatternCells() {
+      const out = [];
+      let minR = Infinity, minC = Infinity;
+      for (let y = 0; y < state.rows; y++) {
+        for (let x = 0; x < state.cols; x++) {
+          if (state.grid[y * state.cols + x] > 0) {
+            out.push([y, x]);
+            if (y < minR) minR = y;
+            if (x < minC) minC = x;
+          }
+        }
+      }
+      if (out.length === 0) return [];
+      // Normalize to top-left origin so templates reposition cleanly.
+      return out.map(([r, c]) => [r - minR, c - minC]);
+    }
+
+    function saveCurrentAsTemplate() {
+      const name = (templateNameEl.value || '').trim();
+      if (!name) { toast('Enter a name first'); return; }
+      const cells = currentPatternCells();
+      if (cells.length === 0) { toast('Grid is empty'); return; }
+
+      const customs = loadCustomTemplates();
+      // Overwrite if same name exists
+      const existingIdx = customs.findIndex(c => c.name === name);
+      const entry = { name, cells };
+      if (existingIdx >= 0) customs[existingIdx] = entry;
+      else customs.push(entry);
+      saveCustomTemplates(customs);
+      refreshTemplates();
+      // Select the saved one.
+      const newIdx = state.templates.findIndex(t => t.name === name && t.custom);
+      if (newIdx >= 0) state.currentTemplateIndex = newIdx;
+      renderTemplateList();
+      toast(`Saved “${name}”`);
+    }
+
+    function deleteSelectedTemplate() {
+      const t = state.templates[state.currentTemplateIndex];
+      if (!t) return;
+      if (!t.custom) { toast('Only custom templates can be deleted'); return; }
+      const customs = loadCustomTemplates().filter(c => c.name !== t.name);
+      saveCustomTemplates(customs);
+      refreshTemplates();
+      state.currentTemplateIndex = Math.min(state.currentTemplateIndex, state.templates.length - 1);
+      renderTemplateList();
+      toast(`Deleted “${t.name}”`);
+    }
+
+    function cycleTemplate(delta) {
+      if (state.templates.length === 0) return;
+      state.currentTemplateIndex =
+        (state.currentTemplateIndex + delta + state.templates.length) % state.templates.length;
+      loadTemplate(state.templates[state.currentTemplateIndex]);
+      renderTemplateList();
+    }
+
+    // ---------- Mode switching ----------
+    function setMode(mode) {
+      state.mode = mode;
+      if (mode === 'config') {
+        configPanel.classList.remove('hidden');
+        simPanel.classList.add('hidden');
+        btnModeConfig.classList.add('active');
+        btnModeSim.classList.remove('active');
+        canvas.classList.remove('sim-mode');
+        pause();
+      } else {
+        configPanel.classList.add('hidden');
+        simPanel.classList.remove('hidden');
+        btnModeConfig.classList.remove('active');
+        btnModeSim.classList.add('active');
+        canvas.classList.add('sim-mode');
+        // Snapshot the current grid so we can Reset back to it later.
+        state.initialGrid = cloneGrid(state.grid);
+        state.generation = 0;
+        updateStats();
+      }
+    }
+
+    function resetToInitial() {
+      if (state.initialGrid) {
+        state.grid = cloneGrid(state.initialGrid);
+      } else {
+        clearGrid();
+      }
+      state.generation = 0;
+      draw();
+      updateStats();
+    }
+
+    // ---------- Playback loop ----------
+    let rafId = null;
+    let lastTick = 0;
+
+    function tick(ts) {
+      if (!state.running) return;
+      const interval = 1000 / state.speed;
+      if (ts - lastTick >= interval) {
+        step();
+        draw();
+        lastTick = ts;
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function play() {
+      if (state.running) return;
+      state.running = true;
+      btnPlay.textContent = '❚❚ Pause';
+      btnPlay.classList.remove('primary');
+      lastTick = 0;
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function pause() {
+      state.running = false;
+      btnPlay.textContent = '▶ Play';
+      btnPlay.classList.add('primary');
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    // ---------- Canvas interaction (config mode) ----------
+    function cellFromEvent(e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / state.cellSize);
+      const y = Math.floor((e.clientY - rect.top) / state.cellSize);
+      if (x < 0 || y < 0 || x >= state.cols || y >= state.rows) return null;
+      return [x, y];
+    }
+
+    // Pointer events cover both mouse and touch (iOS Safari included).
+    canvas.addEventListener('pointerdown', (e) => {
+      if (state.mode !== 'config') return;
+      const c = cellFromEvent(e);
+      if (!c) return;
+      e.preventDefault();
+      // Capture so we keep getting moves even if the finger drifts off the canvas.
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
+      const [x, y] = c;
+      const i = y * state.cols + x;
+      state.painting = true;
+      // If starting on an alive cell, erase; otherwise paint alive.
+      state.paintValue = state.grid[i] > 0 ? 0 : 1;
+      state.grid[i] = state.paintValue;
+      state.lastPaintCell = `${x},${y}`;
+      draw();
+      updateStats();
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!state.painting || state.mode !== 'config') return;
+      const c = cellFromEvent(e);
+      if (!c) return;
+      e.preventDefault();
+      const [x, y] = c;
+      const key = `${x},${y}`;
+      if (key === state.lastPaintCell) return;
+      state.lastPaintCell = key;
+      state.grid[y * state.cols + x] = state.paintValue;
+      draw();
+      updateStats();
+    });
+
+    function endPaint(e) {
+      if (e && e.pointerId != null) {
+        try { canvas.releasePointerCapture(e.pointerId); } catch {}
+      }
+      state.painting = false;
+      state.lastPaintCell = null;
+    }
+    canvas.addEventListener('pointerup', endPaint);
+    canvas.addEventListener('pointercancel', endPaint);
+
+    // ---------- Keyboard shortcuts ----------
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (state.mode === 'sim') state.running ? pause() : play();
+      } else if (e.key === 'ArrowRight' && state.mode === 'config') {
+        cycleTemplate(1);
+      } else if (e.key === 'ArrowLeft' && state.mode === 'config') {
+        cycleTemplate(-1);
+      } else if (e.key === 's' && state.mode === 'sim') {
+        step();
+        draw();
+      }
+    });
+
+    // ---------- Toast ----------
+    let toastTimer = null;
+    function toast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+    }
+
+    // ---------- Wire up controls ----------
+    btnModeConfig.addEventListener('click', () => setMode('config'));
+    btnModeSim.addEventListener('click', () => setMode('sim'));
+    btnStartSim.addEventListener('click', () => setMode('sim'));
+    btnBack.addEventListener('click', () => setMode('config'));
+    btnPlay.addEventListener('click', () => state.running ? pause() : play());
+    btnStep.addEventListener('click', () => { pause(); step(); draw(); });
+    btnReset.addEventListener('click', () => { pause(); resetToInitial(); });
+    btnClear.addEventListener('click', clearGrid);
+    btnResize.addEventListener('click', () => {
+      resizeGrid(parseInt(gridColsEl.value, 10), parseInt(gridRowsEl.value, 10));
+    });
+    btnSaveTemplate.addEventListener('click', saveCurrentAsTemplate);
+    btnDeleteTemplate.addEventListener('click', deleteSelectedTemplate);
+    btnPrevTemplate.addEventListener('click', () => cycleTemplate(-1));
+    btnNextTemplate.addEventListener('click', () => cycleTemplate(1));
+
+    speedEl.addEventListener('input', () => {
+      state.speed = parseInt(speedEl.value, 10);
+      speedLabelEl.textContent = `${state.speed} fps`;
+    });
+
+    ruleAgeCapEl.addEventListener('change', () => {
+      state.ruleAgeCap = ruleAgeCapEl.checked;
+    });
+
+    maxAgeEl.addEventListener('change', () => {
+      const v = parseInt(maxAgeEl.value, 10);
+      if (!Number.isFinite(v) || v < 2) return;
+      state.maxAge = Math.min(100, Math.max(2, v));
+      maxAgeEl.value = state.maxAge;
+      renderLegend();
+    });
+
+    window.addEventListener('resize', () => { resizeCanvas(); draw(); });
+
+    // ---------- Boot ----------
+    state.cols = parseInt(gridColsEl.value, 10);
+    state.rows = parseInt(gridRowsEl.value, 10);
+    state.grid = makeGrid(state.cols, state.rows);
+    resizeCanvas();
+    refreshTemplates();
+    // Preload first template so there's something interesting on screen.
+    state.currentTemplateIndex = BUILTIN_TEMPLATES.findIndex(t => t.name === 'Pulsar');
+    if (state.currentTemplateIndex < 0) state.currentTemplateIndex = 0;
+    loadTemplate(state.templates[state.currentTemplateIndex]);
+    renderTemplateList();
+    renderLegend();
+    draw();
+    updateStats();
+  })();
+  </script>
+</body>
+</html>
