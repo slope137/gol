@@ -326,6 +326,19 @@
           </div>
 
           <div class="section">
+            <h2>Mirror editing</h2>
+            <label style="flex-direction: row; gap: 8px; align-items: center;">
+              <input type="checkbox" id="mirror-x" />
+              <span>Mirror X (left ↔ right)</span>
+            </label>
+            <label style="flex-direction: row; gap: 8px; align-items: center;">
+              <input type="checkbox" id="mirror-y" />
+              <span>Mirror Y (top ↔ bottom)</span>
+            </label>
+            <div class="help">Edit one quadrant and the pattern is reflected across the enabled axes. Affects editing only, not simulation.</div>
+          </div>
+
+          <div class="section">
             <h2>Save Current Pattern</h2>
             <div class="row">
               <input type="text" id="template-name" placeholder="my-pattern" maxlength="30" />
@@ -434,6 +447,9 @@
       ruleAgeCap: true,
       templates: [],
       currentTemplateIndex: 0,
+      // editing
+      mirrorX: false,
+      mirrorY: false,
       // interaction
       painting: false,
       paintValue: 0,
@@ -780,6 +796,29 @@
         }
         ctx.stroke();
       }
+
+      // Mirror axis guides (config mode only).
+      if (state.mode === 'config' && (state.mirrorX || state.mirrorY)) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(124, 92, 255, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        if (state.mirrorX) {
+          const ax = (cols / 2) * cell + 0.5;
+          ctx.beginPath();
+          ctx.moveTo(ax, 0);
+          ctx.lineTo(ax, rows * cell);
+          ctx.stroke();
+        }
+        if (state.mirrorY) {
+          const ay = (rows / 2) * cell + 0.5;
+          ctx.beginPath();
+          ctx.moveTo(0, ay);
+          ctx.lineTo(cols * cell, ay);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
     }
 
     function updateStats() {
@@ -1009,6 +1048,29 @@
       return [x, y];
     }
 
+    // Paint a cell (and its mirror reflections, if enabled) to `value`.
+    function paintCell(x, y, value) {
+      const cols = state.cols;
+      const rows = state.rows;
+      const positions = [[x, y]];
+      if (state.mirrorX) positions.push([cols - 1 - x, y]);
+      if (state.mirrorY) {
+        // Mirror every position already queued, so X+Y combined gives 4 quadrants.
+        const len = positions.length;
+        for (let i = 0; i < len; i++) {
+          positions.push([positions[i][0], rows - 1 - positions[i][1]]);
+        }
+      }
+      // Dedupe for cells that sit on a mirror axis (odd-sized grids).
+      const seen = new Set();
+      for (const [px, py] of positions) {
+        const key = `${px},${py}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        state.grid[py * cols + px] = value;
+      }
+    }
+
     // Pointer events cover both mouse and touch (iOS Safari included).
     canvas.addEventListener('pointerdown', (e) => {
       if (state.mode !== 'config') return;
@@ -1022,7 +1084,7 @@
       state.painting = true;
       // If starting on an alive cell, erase; otherwise paint alive.
       state.paintValue = state.grid[i] > 0 ? 0 : 1;
-      state.grid[i] = state.paintValue;
+      paintCell(x, y, state.paintValue);
       state.lastPaintCell = `${x},${y}`;
       draw();
       updateStats();
@@ -1037,7 +1099,7 @@
       const key = `${x},${y}`;
       if (key === state.lastPaintCell) return;
       state.lastPaintCell = key;
-      state.grid[y * state.cols + x] = state.paintValue;
+      paintCell(x, y, state.paintValue);
       draw();
       updateStats();
     });
@@ -1102,6 +1164,11 @@
     ruleAgeCapEl.addEventListener('change', () => {
       state.ruleAgeCap = ruleAgeCapEl.checked;
     });
+
+    const mirrorXEl = document.getElementById('mirror-x');
+    const mirrorYEl = document.getElementById('mirror-y');
+    mirrorXEl.addEventListener('change', () => { state.mirrorX = mirrorXEl.checked; draw(); });
+    mirrorYEl.addEventListener('change', () => { state.mirrorY = mirrorYEl.checked; draw(); });
 
     maxAgeEl.addEventListener('change', () => {
       const v = parseInt(maxAgeEl.value, 10);
